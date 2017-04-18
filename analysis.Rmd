@@ -1,0 +1,15 @@
+## Ilse Dippenaar and Sam Gilbert
+https://www.kaggle.com/fivethirtyeight/2016-election-polls
+
+```{r}
+d <- read.csv("presidential_polls.csv")
+d <- subset(d, type=="polls-only")
+exclude <- c("cycle", "branch", "type", "matchup", "forecastdate", "multiversions", "timestamp", "rawpoll_mcmullin", "adjpoll_mcmullin")
+d <- d[,!(names(d)  %in% exclude)]
+sapply(names(d), function(n) length(unique(d[[n]])))
+```
+
+```{r}
+View(d)
+```
+

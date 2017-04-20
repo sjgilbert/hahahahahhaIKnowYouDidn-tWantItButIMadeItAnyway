@@ -6,6 +6,8 @@ d <- read.csv("presidential_polls.csv")
 d <- subset(d, type=="polls-only")
 exclude <- c("cycle", "branch", "type", "matchup", "forecastdate", "multiversions", "timestamp", "rawpoll_mcmullin", "adjpoll_mcmullin")
 d <- d[,!(names(d)  %in% exclude)]
+
+outcomes <- read.csv("outcomes.csv")
 sapply(names(d), function(n) length(unique(d[[n]])))
 ```
 

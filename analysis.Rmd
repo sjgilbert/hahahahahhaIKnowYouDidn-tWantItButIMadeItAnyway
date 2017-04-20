@@ -2,16 +2,45 @@
 https://www.kaggle.com/fivethirtyeight/2016-election-polls
 
 ```{r}
-d <- read.csv("presidential_polls.csv")
-d <- subset(d, type=="polls-only")
-exclude <- c("cycle", "branch", "type", "matchup", "forecastdate", "multiversions", "timestamp", "rawpoll_mcmullin", "adjpoll_mcmullin")
-d <- d[,!(names(d)  %in% exclude)]
-
-outcomes <- read.csv("outcomes.csv")
-sapply(names(d), function(n) length(unique(d[[n]])))
+require(mosaic)
+require(ggplot2)
+require(rpart)
+require(dplyr)
+require(class)
 ```
 
 ```{r}
-View(d)
+outcomes <- read.csv("outcomes.csv", sep=",", strip.white = T, stringsAsFactors = F)
+raw <- read.csv("presidential_polls.csv", sep=",", strip.white = T, stringsAsFactors = F)
+d <- raw %>% 
+  filter(type == "polls-only") %>%
+  select(-c(cycle, branch, type, matchup, forecastdate, multiversions, timestamp, 
+            rawpoll_mcmullin, adjpoll_mcmullin, question_id, createddate, url)) %>%
+  left_join(outcomes)
+```
+
+```{r}
+pres_colors <- c("#14B3F5", "#DD342F")
+ggplot(d, aes(rawpoll_clinton, rawpoll_trump, color=result)) +
+  geom_point(size = 0.5) +
+  xlim(0, 100) + ylim(0, 100) +
+  scale_color_manual(values = pres_colors, name = "Result") +
+  labs(x = "Clinton", y = "Trump")
+```
+
+
+```{r}
+covNames <- c("adjpoll_clinton", "adjpoll_trump")
+covNames2 <- c("rawpoll_clinton", "rawpoll_trump")
+C <- eigen(cor(d[covNames]))
+components <- as.matrix(d[covNames]) %*% C$vectors
+```
+
+
+```{r}
+ggplot(d, aes(components[,1], components[,2], color=result)) + 
+  geom_point(alpha = 0.2, size = 0.5) +
+  scale_color_manual(values = pres_colors) +
+  labs(x = "Principal Component 1", y = "Principal Component 2")
 ```
 

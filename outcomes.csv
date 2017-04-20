@@ -1,3 +1,4 @@
+state, result
 U.S., Trump
 Alaska, Trump
 Washington, Clinton
@@ -45,9 +46,8 @@ Florida, Trump
 Vermont, Clinton
 Massachusetts, Clinton
 Connecticut, Clinton
-Deleware, Clinton
+Delaware, Clinton
 New Hampshire, Clinton
 Rhode Island, Clinton
 District of Columbia, Clinton
-Maine, Clinton 
-
+Maine, Clinton

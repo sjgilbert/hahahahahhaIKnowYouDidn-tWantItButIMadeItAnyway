@@ -1,5 +1,30 @@
 ## Ilse Dippenaar and Sam Gilbert
+Poll data received from:
 https://www.kaggle.com/fivethirtyeight/2016-election-polls
+
+Election results compiled from:
+http://www.cnn.com/election/results/president
+
+The dataset we decided to analyze was polling data from the 2016 U.S. presidential election. Originally the dataset included 2 duplicates of the initial polling data, but modified to fit alternative models. In our analysis, we have filtered these additional models out. We then filtered additional unnecessary columns. The remaining variables in our dataset are as follows:
+
+  state: The U.S. state for which the poll was predicting a winner. U.S. means it was a national poll.
+  startdate: The time the poll began.
+  enddate: The time the poll ended.
+  pollster: The organization running the poll.
+  grade: The letter grade of the quality of the poll.
+  samplesize: The number of people polled.
+  population: The type of people polled. In this case, "lv" = "likely voters", "rv" = "registered voters", "a" = "adults" and "v" = voters. 
+  poll_wt: A factor used in the adjusted poll values based on a number of factors including sample size and the time of the poll. 
+  rawpoll_clinton: The raw percentage awarded to Clinton.
+  rawpoll_trump: The raw percentage awarded to Trump.
+  rawpoll_johnson: The raw percentage awarded to Johnson.
+  adjpoll_clinton: The adjusted poll percentage awarded to Clinton.
+  adjpoll_trump: The adjusted poll percentage awarded to Trump.
+  adjpoll_johnson: The adjusted poll percentage awarded to Johnson.
+  poll_id: The unique integer assigned to each poll.
+  
+  For more information on the adjustments for adjpoll variables, see:
+  https://fivethirtyeight.com/features/a-users-guide-to-fivethirtyeights-2016-general-election-forecast/
 
 ```{r}
 require(mosaic)

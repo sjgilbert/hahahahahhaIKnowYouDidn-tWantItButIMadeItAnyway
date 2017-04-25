@@ -126,7 +126,8 @@ d <- raw %>%
   left_join(poll_quality, by = "grade") %>%
   left_join(state_results, by = "state") %>%
   filter(!is.na(result)) %>%
-  mutate(is_wrong = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson) != result)
+  mutate(predicted = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson),
+         is_wrong = predicted != result)
 d["error"] <- apply(
   d[c("rawpoll_clinton", "rawpoll_trump", "rawpoll_johnson")] - 
     d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
@@ -192,7 +193,10 @@ ggplot() +
 ```
 
 ```{r}
-
+table(d$predicted, d$is_wrong)/nrow(d)
+d %>% 
+  ggplot(aes(predicted, error, col=result)) +
+  geom_point()
 ```
 
 

@@ -120,14 +120,15 @@ poll_quality <- data.frame(grade = c("A+", "A", "A-",
 d <- raw %>% 
   filter(type == "polls-only") %>%
   select(-c(cycle, branch, type, matchup, forecastdate, multiversions, timestamp, 
-            rawpoll_mcmullin, adjpoll_mcmullin, question_id, createddate, url)) %>%
+            rawpoll_mcmullin, adjpoll_mcmullin, question_id, createddate, url, 
+            adjpoll_clinton, adjpoll_trump, adjpoll_johnson)) %>%
   left_join(outcomes, by = "state") %>%
   left_join(poll_quality, by = "grade") %>%
   left_join(state_results, by = "state") %>%
   filter(!is.na(result)) %>%
-  mutate(is_wrong = predicted(adjpoll_clinton, adjpoll_trump, adjpoll_johnson) != result)
+  mutate(is_wrong = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson) != result)
 d["error"] <- apply(
-  d[c("adjpoll_clinton", "adjpoll_trump", "adjpoll_johnson")] - 
+  d[c("rawpoll_clinton", "rawpoll_trump", "rawpoll_johnson")] - 
     d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
 ```
 
@@ -145,28 +146,20 @@ ggplot(d, aes(rawpoll_clinton, rawpoll_trump, color=result)) +
 
 
 ```{r}
-cov_names <- c("adjpoll_clinton", "adjpoll_trump")
-cov_names2 <- c("rawpoll_clinton", "rawpoll_trump")
-mod <- prcomp(d[cov_names], scale. = T)
+mod <- prcomp(d %>% 
+                filter(!is.na(rawpoll_johnson)) %>% 
+                select(rawpoll_clinton, rawpoll_trump, rawpoll_johnson), scale. = T)
 components <- mod$x
 ```
 
 
 ```{r}
-ggplot(d, aes(components[,1], components[,2], color=result)) + 
+ggplot(d %>% filter(!is.na(rawpoll_johnson)), aes(components[,1], components[,2], color=result)) + 
   geom_point(alpha = 1, size = 0.5) +
   scale_color_manual(values = pres_colors) +
   labs(x = "Principal Component 1", y = "Principal Component 2") +
   theme_light() +
   theme(aspect.ratio = 1)
-```
-
-```{r}
-d %>% 
-  filter(!is.na(gradeValue)) %>%
-  ggplot(aes(adjpoll_clinton, gradeValue, color=result)) +
-  scale_color_manual(values = pres_colors) +
-  geom_point()
 ```
 
 ```{r}
@@ -179,18 +172,9 @@ d %>%
 So, grade value has no bearing on whether or not the poll predicted the election correctly... does anything else? Maybe duration, time it started, time it ended, or location?
 
 ```{r}
-d %>% 
-  filter(!is.na(gradeValue)) %>%
-  ggplot(aes(gradeValue, error)) + 
-  geom_point() +
-  geom_smooth(method = "lm")
-```
-
-So grade value doesn't predict the prediction error either...
-```{r}
 summary(lm(error ~ gradeValue, data = d))
 ```
- I mean, *technically*, but it's not a large effect.
+So the error rate is not dependent on grade, but maybe incredibly slightly. 
  
  
 ```{r}
@@ -205,6 +189,10 @@ ggplot() +
   coord_fixed(1.3) +
   scale_fill_gradient(low = "white", high = "red", name = "Error") +
   theme_map()
+```
+
+```{r}
+
 ```
 
 

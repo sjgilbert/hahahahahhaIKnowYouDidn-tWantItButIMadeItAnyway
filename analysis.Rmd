@@ -34,15 +34,103 @@ require(dplyr)
 require(class)
 ```
 
+```{r}
+predicted <- function(clinton, trump, johnson) {
+  pred <- apply(cbind(clinton, trump, johnson), 1, which.max)
+  ifelse(pred == 1, "Clinton", ifelse(pred == 2, "Trump", "Johnson"))
+}
+```
+
+
+```{r}
+make_state_results_data_frame <- function() {
+  # national_2016.csv from https://econsnapshot.com/2016/11/30/our-election-data/
+  county_raw <- read.csv("national_2016.csv", stringsAsFactors = F)
+  state_results_raw1 <- county_raw %>%
+    group_by(state) %>%
+    mutate(total_votes = sum(votes)) %>%
+    group_by(candidate, add = T) %>%
+    # total votes will be the same across candidates
+    summarize(percent = (sum(votes) / total_votes[1] * 100))
+  
+  state_abbrevs <- read.csv("state_abbrevs.csv", stringsAsFactors = F)
+  # Initialize empty data frame with column names
+  all_candidate_names <- unique(state_results_raw1$candidate)
+  make_new_row <- function() {
+    new_df <- data.frame(state="")
+    for (candidate in all_candidate_names) {
+      new_df[candidate] <- 0
+    }
+    return(new_df)
+  }
+  state_results_raw2 <- make_new_row()
+  state_results_raw2 <- state_results_raw2[-1,]
+  for (state_ab in unique(state_results_raw1$state)) {
+    current_result <- subset(state_results_raw1, state == state_ab)
+    state_name <- subset(state_abbrevs, state_abbrev == state_ab)[["state_name"]]
+    next_row <- make_new_row()
+    next_row["state"] <- state_name
+    for (i in 1:nrow(current_result)) {
+      next_row[current_result[["candidate"]][i]] <- current_result[["percent"]][i]
+    }
+    state_results_raw2 <- rbind(state_results_raw2, next_row)
+  }
+  clinton <- apply(state_results_raw2[c("Clinton", "H. Clinton", "Hillary Clinton")], 1, sum)
+  trump <- apply(state_results_raw2[c("Trump", "D. Trump", "Donald Trump")], 1, sum)
+  johnson <- apply(state_results_raw2[c("G. Johnson", "Gary Johnson")], 1, sum)
+  other <- apply(state_results_raw2[-1], 1, sum) - clinton - trump - johnson
+  
+  total_votes <- sum(county_raw$votes)
+  votes_clinton <- sum(subset(county_raw,
+                          candidate %in% c("Clinton", "H. Clinton", "Hillary Clinton"))$votes)
+  votes_trump <- sum(subset(county_raw,
+                          candidate %in% c("Trump", "D. Trump", "Donald Trump"))$votes)
+  votes_johnson <- sum(subset(county_raw,
+                          candidate %in% c("G. Johnson", "Gary Johnson"))$votes)
+  votes_other <- total_votes - (votes_clinton + votes_trump + votes_johnson)
+  
+  ret <- data.frame(state=state_results_raw2[["state"]],
+                    actual_clinton = clinton, 
+                    actual_trump = trump, 
+                    actual_johnson = johnson, 
+                    actual_other = other,
+                    stringsAsFactors = F)
+  rbind(ret, data.frame(state = "U.S.", 
+                        actual_clinton = votes_clinton / total_votes * 100,
+                        actual_trump = votes_trump / total_votes * 100,
+                        actual_johnson = votes_johnson / total_votes * 100,
+                        actual_other = votes_other / total_votes * 100))
+}
+state_results <- make_state_results_data_frame()
+```
+
+
 ```{r, message=F, warning=F}
+# TODO: combine congressional districts
 outcomes <- read.csv("outcomes.csv", sep=",", strip.white = T, stringsAsFactors = F)
 raw <- read.csv("presidential_polls.csv", sep=",", strip.white = T, stringsAsFactors = F)
+poll_quality <- data.frame(grade = c("A+", "A", "A-",
+                                    "B+", "B", "B-",
+                                    "C+", "C", "C-",
+                                    "D+", "D", "D-",
+                                    ""), 
+                          gradeValue = c(12:1, NA), 
+                          stringsAsFactors = F)
+
 d <- raw %>% 
   filter(type == "polls-only") %>%
   select(-c(cycle, branch, type, matchup, forecastdate, multiversions, timestamp, 
             rawpoll_mcmullin, adjpoll_mcmullin, question_id, createddate, url)) %>%
-  left_join(outcomes)
+  left_join(outcomes, by = "state") %>%
+  left_join(poll_quality, by = "grade") %>%
+  left_join(state_results, by = "state") %>%
+  filter(!is.na(result)) %>%
+  mutate(is_wrong = predicted(adjpoll_clinton, adjpoll_trump, adjpoll_johnson) != result)
+d["error"] <- apply(
+  d[c("adjpoll_clinton", "adjpoll_trump", "adjpoll_johnson")] - 
+    d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
 ```
+
 
 ```{r}
 pres_colors <- c("#14B3F5", "#DD342F")
@@ -50,22 +138,73 @@ ggplot(d, aes(rawpoll_clinton, rawpoll_trump, color=result)) +
   geom_point(size = 0.5) +
   xlim(0, 100) + ylim(0, 100) +
   scale_color_manual(values = pres_colors, name = "Result") +
-  labs(x = "Clinton", y = "Trump")
+  labs(x = "Clinton Percent", y = "Trump Percent") +
+  theme_light() +
+  theme(aspect.ratio = 1)
 ```
 
 
 ```{r}
-covNames <- c("adjpoll_clinton", "adjpoll_trump")
-covNames2 <- c("rawpoll_clinton", "rawpoll_trump")
-C <- eigen(cor(d[covNames]))
-components <- as.matrix(d[covNames]) %*% C$vectors
+cov_names <- c("adjpoll_clinton", "adjpoll_trump")
+cov_names2 <- c("rawpoll_clinton", "rawpoll_trump")
+mod <- prcomp(d[cov_names], scale. = T)
+components <- mod$x
 ```
 
 
 ```{r}
 ggplot(d, aes(components[,1], components[,2], color=result)) + 
-  geom_point(alpha = 0.2, size = 0.5) +
+  geom_point(alpha = 1, size = 0.5) +
   scale_color_manual(values = pres_colors) +
-  labs(x = "Principal Component 1", y = "Principal Component 2")
+  labs(x = "Principal Component 1", y = "Principal Component 2") +
+  theme_light() +
+  theme(aspect.ratio = 1)
 ```
+
+```{r}
+d %>% 
+  filter(!is.na(gradeValue)) %>%
+  ggplot(aes(adjpoll_clinton, gradeValue, color=result)) +
+  scale_color_manual(values = pres_colors) +
+  geom_point()
+```
+
+```{r}
+d %>%
+  filter(!is.na(gradeValue)) %>%
+  ggplot(aes(is_wrong, gradeValue)) +
+  geom_boxplot()
+```
+
+So, grade value has no bearing on whether or not the poll predicted the election correctly... does anything else? Maybe duration, time it started, time it ended, or location?
+
+```{r}
+d %>% 
+  filter(!is.na(gradeValue)) %>%
+  ggplot(aes(gradeValue, error)) + 
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+So grade value doesn't predict the prediction error either...
+```{r}
+summary(lm(error ~ gradeValue, data = d))
+```
+ I mean, *technically*, but it's not a large effect.
+ 
+ 
+```{r}
+states <- map_data("state") %>% 
+  left_join(d %>%
+               filter(state != "U.S.") %>% 
+               mutate(state = tolower(state)) %>%
+               group_by(state) %>% 
+               summarize(error = mean(error)), by=c("region" = "state"))
+ggplot() +
+  geom_polygon(data = states, aes(long, lat, group = group, fill=error), color="black") +
+  coord_fixed(1.3) +
+  scale_fill_gradient(low = "white", high = "red", name = "Error") +
+  theme_map()
+```
+
 

@@ -14,11 +14,11 @@ The dataset we decided to analyze was polling data from the 2016 U.S. presidenti
   grade: The letter grade of the quality of the poll.
   samplesize: The number of people polled.
   population: The type of people polled. In this case, "lv" = "likely voters", "rv" = "registered voters", "a" = "adults" and "v" = voters. 
-  poll_wt: A factor used in the adjusted poll values based on a number of factors including sample size and the time of the poll. 
   rawpoll_clinton: The raw percentage awarded to Clinton.
   rawpoll_trump: The raw percentage awarded to Trump.
   rawpoll_johnson: The raw percentage awarded to Johnson.
   poll_id: The unique integer assigned to each poll.
+  
   
   For more information on the adjustments for adjpoll variables, see:
   https://fivethirtyeight.com/features/a-users-guide-to-fivethirtyeights-2016-general-election-forecast/
@@ -71,17 +71,7 @@ make_state_results_data_frame <- function() {
       next_row[current_result[["candidate"]][i]] <- current_result[["percent"]][i]
     }
     state_results_raw2 <- rbind(state_results_raw2, next_row)
-  }
-  clinton <- apply(state_results_raw2[c("Clinton", "H. Clinton", "Hillary Clinton")], 1, sum)
-  trump <- apply(state_results_raw2[c("Trump", "D. Trump", "Donald Trump")], 1, sum)
-  johnson <- apply(state_results_raw2[c("G. Johnson", "Gary Johnson")], 1, sum)
-  other <- apply(state_results_raw2[-1], 1, sum) - clinton - trump - johnson
-  
-  total_votes <- sum(county_raw$votes)
-  votes_clinton <- sum(subset(county_raw,
-                          candidate %in% c("Clinton", "H. Clinton", "Hillary Clinton"))$votes)
-  votes_trump <- sum(subset(county_raw,
-                          candidate %in% c("Trump", "D. Trump", "Donald Trump"))$votes)
+  } clinton <- apply(state_results_raw2[c("Clinton", "H. Clinton", "Hillary Clinton")], 1, sum) trump <- apply(state_results_raw2[c("Trump", "D. Trump", "Donald Trump")], 1, sum) johnson <- apply(state_results_raw2[c("G. Johnson", "Gary Johnson")], 1, sum) other <- apply(state_results_raw2[-1], 1, sum) - clinton - trump - johnson  total_votes <- sum(county_raw$votes) votes_clinton <- sum(subset(county_raw, candidate %in% c("Clinton", "H. Clinton", "Hillary Clinton"))$votes) votes_trump <- sum(subset(county_raw, candidate %in% c("Trump", "D. Trump", "Donald Trump"))$votes)
   votes_johnson <- sum(subset(county_raw,
                           candidate %in% c("G. Johnson", "Gary Johnson"))$votes)
   votes_other <- total_votes - (votes_clinton + votes_trump + votes_johnson)
@@ -124,11 +114,12 @@ d <- raw %>%
   left_join(state_results, by = "state") %>%
   filter(!is.na(result)) %>%
   mutate(predicted = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson),
-         is_wrong = predicted != result) %>%
+         is_wrong = predicted != result) 
 d["error"] <- apply(
   d[c("rawpoll_clinton", "rawpoll_trump", "rawpoll_johnson")] - 
     d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
 d["duration"] <- as.numeric(as.Date(d[["enddate"]], "%m/%d/%Y") - as.Date(d[["startdate"]], "%m/%d/%Y"))
+d["end_date_to_election"] <- as.numeric(as.Date("11/09/2016", "%m/%d/%Y") - as.Date(d[["enddate"]], "%m/%d/%Y")) 
 ```
 
 
@@ -196,6 +187,7 @@ ggplot() +
   scale_fill_gradient(low = "white", high = "red", name = "Error") +
   theme_map()
 ```
+
 
 ```{r}
 table(d$predicted, d$is_wrong)/nrow(d)

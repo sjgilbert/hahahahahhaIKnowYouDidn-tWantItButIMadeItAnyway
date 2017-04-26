@@ -111,24 +111,25 @@ poll_quality <- data.frame(grade = c("A+", "A", "A-",
                                     "C+", "C", "C-",
                                     "D+", "D", "D-",
                                     ""), 
-                          gradeValue = c(12:1, NA), 
+                          grade_value = c(12:1, NA), 
                           stringsAsFactors = F)
 
 d <- raw %>% 
   filter(type == "polls-only") %>%
   select(-c(cycle, branch, type, matchup, forecastdate, multiversions, timestamp, 
             rawpoll_mcmullin, adjpoll_mcmullin, question_id, createddate, url, 
-            adjpoll_clinton, adjpoll_trump, adjpoll_johnson)) %>%
+            adjpoll_clinton, adjpoll_trump, adjpoll_johnson, poll_wt, population)) %>%
   left_join(outcomes, by = "state") %>%
   left_join(poll_quality, by = "grade") %>%
   left_join(state_results, by = "state") %>%
   filter(!is.na(result)) %>%
   mutate(predicted = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson),
-         is_wrong = predicted != result) %>%
+         is_correct = predicted == result,
+         duration = as.numeric(as.Date(enddate, "%m/%d/%Y") - as.Date(startdate, "%m/%d/%Y")),
+         is_national = state == "U.S.")
 d["error"] <- apply(
   d[c("rawpoll_clinton", "rawpoll_trump", "rawpoll_johnson")] - 
     d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
-d["duration"] <- as.numeric(as.Date(d[["enddate"]], "%m/%d/%Y") - as.Date(d[["startdate"]], "%m/%d/%Y"))
 ```
 
 
@@ -163,15 +164,15 @@ ggplot(d %>% filter(!is.na(rawpoll_johnson)), aes(components[,1], components[,2]
 
 ```{r}
 d %>%
-  filter(!is.na(gradeValue)) %>%
-  ggplot(aes(is_wrong, gradeValue)) +
+  filter(!is.na(grade_value)) %>%
+  ggplot(aes(is_wrong, grade_value)) +
   geom_boxplot()
 ```
 
 So, grade value has no bearing on whether or not the poll predicted the election correctly... does anything else? Maybe duration, time it started, time it ended, or location?
 
 ```{r}
-summary(lm(error ~ gradeValue, data = d))
+summary(lm(error ~ grade_value, data = d))
 ```
 So the error rate is not dependent on grade, but maybe incredibly slightly. 
  
@@ -188,7 +189,7 @@ states <- map_data("state") %>%
               summarize(predicted_clinton = sum(poll_clinton) / total_samplesize[1],
                         predicted_trump = sum(poll_trump) / total_samplesize[1],
                         error = (abs(predicted_clinton - actual_clinton[1]) + 
-                                 abs(predicted_trump - actual_trump[1])) / 2),
+                                 abs(predicted_trump - actual_trump[1])) / 2), # take the 1-norm of the error
             by=c("region" = "state"))
 ggplot() +
   geom_polygon(data = states, aes(long, lat, group = group, fill=error), color="black") +
@@ -198,7 +199,16 @@ ggplot() +
 ```
 
 ```{r}
-table(d$predicted, d$is_wrong)/nrow(d)
+table(d$predicted, !d$is_wrong)/nrow(d)
+USpolls <- d %>% filter(state == "U.S.")
+table(USpolls$predicted, !USpolls$is_wrong) / nrow(USpolls)
+state_polls <- d %>% filter(state != "U.S.")
+table(state_polls$predicted, !state_polls$is_wrong) / nrow(state_polls)
+```
+
+```{r}
+form1 <- is_wrong ~ end_date_to_elec + duration + samplesize + grade_value + is_national
+form2 <- error ~ end_date_to_elec + duration + samplesize + grade_value + is_national
 ```
 
 

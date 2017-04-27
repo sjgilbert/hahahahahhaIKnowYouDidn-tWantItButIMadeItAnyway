@@ -278,6 +278,14 @@ run_cv(d, form1,
        predict_fun = function(mod, data) predict(mod, data)$class)
 ```
 
+Now to check for sensitivity and specificity to make sure our model is better than the null / random model.
+```{r}
+n <- nrow(d)
+mod <- glm(form1, d[1:n/2,], family = "binomial")
+pred <- predict(mod, d[(n/2+1):n,], type = "response") > 0.5
+table(pred, d[(n/2+1):n,]$is_correct)
+```
+
 
 ```{r}
 rf_data <- d %>% mutate(predicted = predicted == "Clinton")
@@ -292,7 +300,7 @@ results <- sapply(1:20, function(k) {
   run_cv(d %>% mutate(predicted = ifelse(predicted == "Clinton", 1, 0)), form1, 
          fit_fun = function(formula, data) list(formula=formula, train=data),
          predict_fun = function(mod, data) {
-           kNN(mod$formula, mod$train, data)
+           kNN(mod$formula, mod$train, data, k=k)
          })
 })
 plot(results, pch=20, ylim = c(0, 0.3))
@@ -314,7 +322,9 @@ run_cv(d, form2)
 rf_data2 <- d %>% mutate(predicted = predicted == "Clinton")
 rf_form2 <- error ~ end_date_to_election + samplesize + is_national + predicted
 run_cv(rf_data, rf_form, fit_fun = randomForest)
+```
 
+```{r}
 rf_fit <- randomForest(rf_form2, rf_data, importance = T, ntrees = 2000)
 varImpPlot(rf_fit)
 ```

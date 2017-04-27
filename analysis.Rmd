@@ -14,11 +14,11 @@ The dataset we decided to analyze was polling data from the 2016 U.S. presidenti
   grade: The letter grade of the quality of the poll.
   samplesize: The number of people polled.
   population: The type of people polled. In this case, "lv" = "likely voters", "rv" = "registered voters", "a" = "adults" and "v" = voters. 
-  poll_wt: A factor used in the adjusted poll values based on a number of factors including sample size and the time of the poll. 
   rawpoll_clinton: The raw percentage awarded to Clinton.
   rawpoll_trump: The raw percentage awarded to Trump.
   rawpoll_johnson: The raw percentage awarded to Johnson.
   poll_id: The unique integer assigned to each poll.
+  
   
   For more information on the adjustments for adjpoll variables, see:
   https://fivethirtyeight.com/features/a-users-guide-to-fivethirtyeights-2016-general-election-forecast/
@@ -71,17 +71,15 @@ make_state_results_data_frame <- function() {
       next_row[current_result[["candidate"]][i]] <- current_result[["percent"]][i]
     }
     state_results_raw2 <- rbind(state_results_raw2, next_row)
-  }
-  clinton <- apply(state_results_raw2[c("Clinton", "H. Clinton", "Hillary Clinton")], 1, sum)
-  trump <- apply(state_results_raw2[c("Trump", "D. Trump", "Donald Trump")], 1, sum)
-  johnson <- apply(state_results_raw2[c("G. Johnson", "Gary Johnson")], 1, sum)
-  other <- apply(state_results_raw2[-1], 1, sum) - clinton - trump - johnson
+  } 
+  clinton <- apply(state_results_raw2[c("Clinton", "H. Clinton", "Hillary Clinton")], 1, sum) 
+  trump <- apply(state_results_raw2[c("Trump", "D. Trump", "Donald Trump")], 1, sum) 
+  johnson <- apply(state_results_raw2[c("G. Johnson", "Gary Johnson")], 1, sum) 
+  other <- apply(state_results_raw2[-1], 1, sum) - clinton - trump - johnson  
   
-  total_votes <- sum(county_raw$votes)
-  votes_clinton <- sum(subset(county_raw,
-                          candidate %in% c("Clinton", "H. Clinton", "Hillary Clinton"))$votes)
-  votes_trump <- sum(subset(county_raw,
-                          candidate %in% c("Trump", "D. Trump", "Donald Trump"))$votes)
+  total_votes <- sum(county_raw$votes) 
+  votes_clinton <- sum(subset(county_raw, candidate %in% c("Clinton", "H. Clinton", "Hillary Clinton"))$votes) 
+  votes_trump <- sum(subset(county_raw, candidate %in% c("Trump", "D. Trump", "Donald Trump"))$votes)
   votes_johnson <- sum(subset(county_raw,
                           candidate %in% c("G. Johnson", "Gary Johnson"))$votes)
   votes_other <- total_votes - (votes_clinton + votes_trump + votes_johnson)
@@ -126,7 +124,9 @@ d <- raw %>%
   mutate(predicted = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson),
          is_correct = predicted == result,
          duration = as.numeric(as.Date(enddate, "%m/%d/%Y") - as.Date(startdate, "%m/%d/%Y")),
-         is_national = state == "U.S.")
+         is_national = state == "U.S.",
+         end_date_to_election = as.numeric(as.Date("11/09/2016", "%m/%d/%Y") - 
+                                              as.Date(enddate, "%m/%d/%Y")))
 d["error"] <- apply(
   d[c("rawpoll_clinton", "rawpoll_trump", "rawpoll_johnson")] - 
     d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
@@ -165,7 +165,7 @@ ggplot(d %>% filter(!is.na(rawpoll_johnson)), aes(components[,1], components[,2]
 ```{r}
 d %>%
   filter(!is.na(grade_value)) %>%
-  ggplot(aes(is_wrong, grade_value)) +
+  ggplot(aes(is_correct, grade_value)) +
   geom_boxplot()
 ```
 
@@ -198,17 +198,30 @@ ggplot() +
   theme_map()
 ```
 
+
 ```{r}
-table(d$predicted, !d$is_wrong)/nrow(d)
+table(d$predicted, d$is_correct)/nrow(d)
 USpolls <- d %>% filter(state == "U.S.")
-table(USpolls$predicted, !USpolls$is_wrong) / nrow(USpolls)
+table(USpolls$predicted, USpolls$is_correct) / nrow(USpolls)
 state_polls <- d %>% filter(state != "U.S.")
-table(state_polls$predicted, !state_polls$is_wrong) / nrow(state_polls)
+table(state_polls$predicted, state_polls$is_correct) / nrow(state_polls)
+```
+
+These are the formulae that we're using for later model fitting and analyses.
+```{r}
+form1 <- is_correct ~ end_date_to_election + duration + samplesize + grade_value + is_national
+form2 <- error ~ end_date_to_election + duration + samplesize + grade_value + is_national
 ```
 
 ```{r}
-form1 <- is_wrong ~ end_date_to_elec + duration + samplesize + grade_value + is_national
-form2 <- error ~ end_date_to_elec + duration + samplesize + grade_value + is_national
+summary(mod1 <- lm(form1, d))
+summary(mod2 <- lm(form1, d))
 ```
-
+```{r}
+d %>%
+  filter(!is_national) %>%
+  filter(state != "District of Columbia") %>%
+  ggplot(aes(is_correct, error)) + 
+  geom_boxplot()
+```
 

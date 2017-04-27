@@ -1,4 +1,14 @@
-## Ilse Dippenaar and Sam Gilbert
+---
+title: "2016 Election Polls Analysis"
+author: "Ilse Dippenaar and Sam Gilbert"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    theme: journal
+---
+
 Poll data received from:
 https://www.kaggle.com/fivethirtyeight/2016-election-polls
 
@@ -24,13 +34,18 @@ The dataset we decided to analyze was polling data from the 2016 U.S. presidenti
   https://fivethirtyeight.com/features/a-users-guide-to-fivethirtyeights-2016-general-election-forecast/
 
 ```{r, message=F}
-require(mosaic)
-require(ggplot2)
-require(rpart)
-require(dplyr)
-require(class)
+library(mosaic)
+library(ggplot2)
+library(dplyr)
+library(MASS)
+library(DMwR)
+library(randomForest)
+library(party)
+library(class)
 ```
 
+
+# Cleaning Data
 ```{r}
 predicted <- function(clinton, trump, johnson) {
   pred <- apply(cbind(clinton, trump, johnson), 1, which.max)
@@ -113,14 +128,15 @@ poll_quality <- data.frame(grade = c("A+", "A", "A-",
                           stringsAsFactors = F)
 
 d <- raw %>% 
-  filter(type == "polls-only") %>%
-  select(-c(cycle, branch, type, matchup, forecastdate, multiversions, timestamp, 
+  filter(type == "polls-only",
+         !is.na(samplesize)) %>%
+  dplyr::select(-c(cycle, branch, type, matchup, forecastdate, multiversions, timestamp, 
             rawpoll_mcmullin, adjpoll_mcmullin, question_id, createddate, url, 
             adjpoll_clinton, adjpoll_trump, adjpoll_johnson, poll_wt, population)) %>%
   left_join(outcomes, by = "state") %>%
   left_join(poll_quality, by = "grade") %>%
   left_join(state_results, by = "state") %>%
-  filter(!is.na(result)) %>%
+  filter(!is.na(result)) %>% # this excludes rows with state == "Nebraska CD-1" and similar rows
   mutate(predicted = predicted(rawpoll_clinton, rawpoll_trump, rawpoll_johnson),
          is_correct = predicted == result,
          duration = as.numeric(as.Date(enddate, "%m/%d/%Y") - as.Date(startdate, "%m/%d/%Y")),
@@ -132,6 +148,8 @@ d["error"] <- apply(
     d[c("actual_clinton", "actual_trump", "actual_johnson")], 1, function(row) mean(abs(row), na.rm = T))
 ```
 
+
+# Data Exploration
 
 ```{r}
 pres_colors <- c("#14B3F5", "#DD342F")
@@ -148,7 +166,7 @@ ggplot(d, aes(rawpoll_clinton, rawpoll_trump, color=result)) +
 ```{r}
 mod <- prcomp(d %>% 
                 filter(!is.na(rawpoll_johnson)) %>% 
-                select(rawpoll_clinton, rawpoll_trump, rawpoll_johnson), scale. = T)
+                dplyr::select(rawpoll_clinton, rawpoll_trump, rawpoll_johnson), scale. = T)
 components <- mod$x
 ```
 
@@ -207,21 +225,101 @@ state_polls <- d %>% filter(state != "U.S.")
 table(state_polls$predicted, state_polls$is_correct) / nrow(state_polls)
 ```
 
-These are the formulae that we're using for later model fitting and analyses.
+
+# Models
+
+## Cross Validation function
 ```{r}
-form1 <- is_correct ~ end_date_to_election + duration + samplesize + grade_value + is_national
-form2 <- error ~ end_date_to_election + duration + samplesize + grade_value + is_national
+run_cv <- function(data, formula, 
+                   response = NA, fit_fun = lm, predict_fun = predict, folds = 10, exclude_na = T) {
+  if (exclude_na) data <- na.omit(data[all.vars(formula)])
+  if (all(is.na(response))) response <- eval(formula[[2]], data)
+  is_categorical_response = class(response) == "factor" || class(response) == "logical"
+  
+  n <- nrow(data)
+  scrambled_idxs <- sample(1:n)
+  scrambled <- data[scrambled_idxs,]
+  scrambled_response <- response[scrambled_idxs]
+  cuts <- floor(seq(1, n, by = n / folds))
+  cuts <- c(cuts, n)
+  all_error <- c()
+  
+  for (i in 1:(length(cuts)-1)) {
+    test_idxs <- cuts[i]:(cuts[i+1]-1)
+    train <- scrambled[-test_idxs,]
+    test <- scrambled[test_idxs,]
+    mod <- fit_fun(formula, train)
+    predicted <- predict_fun(mod, test)
+    if (is_categorical_response) error <- predicted != scrambled_response[test_idxs]
+    else error <- predicted - scrambled_response[test_idxs]
+    all_error <- c(all_error, error)
+  }
+  mean(all_error^2)
+}
+```
+
+
+## Overview
+These are the formulae that we're using for later model fitting and analyses. We considered the number of days from the end of the poll to election day, the duration of the poll in days, the grade of the poll, whether the poll occurred on a national or state level, and which candidate the poll predicted in our analyses. In addition to these explanatory variables, we chose to investigate the differences between a binary response (whether the poll correctly predicted the outcome for its locale) and a continuous response (the 1-norm of the error between the poll's predicted percentages for each candidate and the actual percentage achieved by each candidate).
+
+## Binary Response
+```{r}
+form1 <- is_correct ~ log(end_date_to_election) + log(samplesize) + is_national*predicted
+summary(glm(form1, d, family = "binomial"))
+```
+
+
+```{r}
+run_cv(d, form1, 
+       fit_fun = function(formula, data) glm(formula, data, family = "binomial"),
+       predict_fun = function(mod, data) predict(mod, data, type = "response") > 0.5)
+run_cv(d, form1, 
+       fit_fun = lda, 
+       predict_fun = function(mod, data) predict(mod, data)$class)
+```
+
+
+```{r}
+rf_data <- d %>% mutate(predicted = predicted == "Clinton")
+rf_form <- as.factor(is_correct) ~ 
+             end_date_to_election + samplesize + is_national + predicted
+run_cv(rf_data, rf_form, fit_fun = randomForest)
+```
+
+
+```{r}
+results <- sapply(1:20, function(k) {
+  run_cv(d %>% mutate(predicted = ifelse(predicted == "Clinton", 1, 0)), form1, 
+         fit_fun = function(formula, data) list(formula=formula, train=data),
+         predict_fun = function(mod, data) {
+           kNN(mod$formula, mod$train, data)
+         })
+})
+plot(results, pch=20, ylim = c(0, 0.3))
+results[which.min(results)]
+```
+
+## Continuous Response
+
+```{r}
+form2 <- error ~ log(end_date_to_election) + log(samplesize) + is_national*predicted
+```
+
+
+```{r}
+run_cv(d, form2)
 ```
 
 ```{r}
-summary(mod1 <- lm(form1, d))
-summary(mod2 <- lm(form1, d))
+rf_data2 <- d %>% mutate(predicted = predicted == "Clinton")
+rf_form2 <- error ~ end_date_to_election + samplesize + is_national + predicted
+run_cv(rf_data, rf_form, fit_fun = randomForest)
+
+rf_fit <- randomForest(rf_form2, rf_data, importance = T, ntrees = 2000)
+varImpPlot(rf_fit)
 ```
 ```{r}
-d %>%
-  filter(!is_national) %>%
-  filter(state != "District of Columbia") %>%
-  ggplot(aes(is_correct, error)) + 
-  geom_boxplot()
+plot(ctree(rf_form2, rf_data, 
+           controls=cforest_control(mtry = 2, mincriterion = 0, maxdepth = 3)))
 ```
 
